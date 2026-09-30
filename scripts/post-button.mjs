@@ -1,5 +1,5 @@
 // Publishes a channel post with a "▶️ Учиться Go" button that opens the Mini App, then tries to pin it.
-// Usage: node scripts/post-button.mjs -1001234567890
+// Usage: node scripts/post-button.mjs <channel id>, e.g. -1001234567890 or the number from web.telegram.org/k/#-1234567890
 // The bot token is asked with hidden input and never written to disk or shell history.
 // Only sendMessage / pinChatMessage are called: the bot's webhook and updates are not touched.
 
@@ -9,11 +9,14 @@ const BOT = 'gazeta_orbita_bot';
 const LAUNCH_URL = `https://t.me/${BOT}?startapp`;
 const TEXT = '🟢 Учиться Go — короткие задачи на доске 9×9.\nНажми кнопку, чтобы открыть приложение. Прогресс сохраняется.';
 
-const chatId = process.argv[2];
-if (!chatId || !/^-100\d+$/.test(chatId)) {
-  console.error('Укажи ID канала вида -100…, например: node scripts/post-button.mjs -1001234567890');
+const arg = (process.argv[2] ?? '').replace(/^#/, '');
+if (!/^-?\d+$/.test(arg)) {
+  console.error('Укажи ID канала, например: node scripts/post-button.mjs -4397260289');
   process.exit(1);
 }
+// Telegram Web shows the id without the "-100" prefix that the Bot API uses for channels.
+const digits = arg.replace(/^-/, '').replace(/^100(?=\d{10,})/, '');
+const candidates = [`-100${digits}`, `-${digits}`];
 
 function askHidden(question) {
   return new Promise((resolve) => {
@@ -42,6 +45,20 @@ async function call(method, body) {
     body: JSON.stringify(body),
   });
   return res.json();
+}
+
+let chatId = null;
+for (const id of candidates) {
+  const info = await call('getChat', { chat_id: id });
+  if (info.ok) {
+    chatId = id;
+    console.log(`Нашёл: «${info.result.title}» (${info.result.type}, ${id}).`);
+    break;
+  }
+}
+if (!chatId) {
+  console.error('Бот не видит этот канал. Проверь ID и что бот — администратор канала.');
+  process.exit(1);
 }
 
 const sent = await call('sendMessage', {
