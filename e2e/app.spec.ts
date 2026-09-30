@@ -35,7 +35,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('full learner journey with persistence', async ({ page }, info) => {
-  await page.goto('/');
+  await page.goto('./');
   await expect(page.getByText('0 / 100')).toBeVisible();
   await noHorizontalScroll(page);
   await page.screenshot({ path: info.outputPath('home.png') });
@@ -94,7 +94,7 @@ test('full learner journey with persistence', async ({ page }, info) => {
 });
 
 test('taps near edges and corners hit the right intersection', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('./');
   await page.getByRole('button', { name: 'Начать обучение' }).click();
   await page.getByRole('button', { name: 'Понятно, к задачам' }).click();
   // Taps slightly outside the grid (in the margin) and slightly off the point.
@@ -113,7 +113,7 @@ test('taps near edges and corners hit the right intersection', async ({ page }) 
 });
 
 test('corrupted storage does not break the app; export/import/reset work', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('./');
   await page.evaluate(() => localStorage.setItem('go-trainer-progress', '{"v":1,"problems":'));
   await page.reload();
   await expect(page.locator('.notice')).toContainText('повреждены');
@@ -144,7 +144,7 @@ test('corrupted storage does not break the app; export/import/reset work', async
 
 test('dark theme renders', async ({ page }, info) => {
   await page.emulateMedia({ colorScheme: 'dark' });
-  await page.goto('/');
+  await page.goto('./');
   const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   expect(bg).toBe('rgb(23, 25, 28)');
   await page.getByRole('button', { name: 'Начать обучение' }).click();
