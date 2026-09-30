@@ -1,7 +1,7 @@
 // Publishes a channel post with a "▶️ Учиться Go" button that opens the Mini App, then tries to pin it.
 // Usage: node scripts/post-button.mjs <channel id>, e.g. -1001234567890 or the number from web.telegram.org/k/#-1234567890
 // The bot token is asked with hidden input and never written to disk or shell history.
-// Only sendMessage / pinChatMessage are called: the bot's webhook and updates are not touched.
+// Only getChat / sendMessage / pinChatMessage are called: the bot's webhook and updates are not touched.
 
 import { createInterface } from 'node:readline';
 
