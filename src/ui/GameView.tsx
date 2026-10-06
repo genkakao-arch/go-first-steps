@@ -43,6 +43,7 @@ export function GameView({ onSpeedTest }: Props) {
   const [finished, setFinished] = useState<Finished | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [confirmResign, setConfirmResign] = useState(false);
+  const [confirmNew, setConfirmNew] = useState(false);
   const [variation, setVariation] = useState<{ label: string; from: GameState; moves: number[]; step: number } | null>(null);
   const pending = useRef<{ state: GameState; promise: Promise<SearchResult | null> } | null>(null);
   const alive = useRef(true);
@@ -250,6 +251,7 @@ export function GameView({ onSpeedTest }: Props) {
     setToast(null);
     setExplain(null);
     setConfirmResign(false);
+    setConfirmNew(false);
     setVariation(null);
     const before = game;
     setGame(next);
@@ -458,8 +460,37 @@ export function GameView({ onSpeedTest }: Props) {
               Точно сдаться?
             </button>
           ) : (
-            <button class="link" onClick={() => setConfirmResign(true)}>
+            <button
+              class="link"
+              onClick={() => {
+                setConfirmResign(true);
+                setConfirmNew(false);
+              }}
+            >
               Сдаться
+            </button>
+          ))}
+        {phase === 'user' &&
+          game.history.length > 0 &&
+          (confirmNew ? (
+            <button
+              class="link danger-link"
+              onClick={() => {
+                setConfirmNew(false);
+                startNew();
+              }}
+            >
+              Начать заново? Эта партия не засчитается
+            </button>
+          ) : (
+            <button
+              class="link"
+              onClick={() => {
+                setConfirmNew(true);
+                setConfirmResign(false);
+              }}
+            >
+              Новая партия
             </button>
           ))}
         <button class="link" onClick={onSpeedTest}>

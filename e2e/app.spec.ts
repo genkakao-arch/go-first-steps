@@ -212,6 +212,14 @@ test('game against KataGo: move, coach, persistence, resign', async ({ page }, i
   await expect(page.getByText('Твой ход.', { exact: true })).toBeVisible({ timeout: 60_000 });
   await expect(page.locator('circle.stone.white')).toHaveCount(1);
 
+  // "Новая партия" mid-game asks first and does not count the game.
+  await page.getByRole('button', { name: 'Новая партия' }).click();
+  await page.getByRole('button', { name: /Начать заново/ }).click();
+  await expect(page.locator('circle.stone')).toHaveCount(0);
+  await expect(page.getByText('уровень 3 · партий 0, побед 0')).toBeVisible();
+  await tapPoint(page, 'E5');
+  await expect(page.getByText('Твой ход.', { exact: true })).toBeVisible({ timeout: 60_000 });
+
   await page.getByRole('button', { name: 'Сдаться' }).click();
   await page.getByRole('button', { name: 'Точно сдаться?' }).click();
   await expect(page.getByRole('heading', { name: 'Поражение' })).toBeVisible();
