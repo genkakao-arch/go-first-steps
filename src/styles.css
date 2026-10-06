@@ -556,3 +556,32 @@ textarea {
   color: var(--accent-text);
   border-color: var(--accent);
 }
+
+.stone.dead {
+  opacity: 0.35;
+}
+.area.black {
+  fill: var(--stone-black);
+}
+.area.white {
+  fill: var(--stone-white);
+  stroke: var(--stone-white-edge);
+  stroke-width: 0.03;
+}
+
+.game-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 16px;
+}
+.danger-link {
+  color: var(--danger);
+}
+.link:disabled {
+  opacity: 0.4;
+}
+
+.game-stats {
+  margin-bottom: 2px;
+}

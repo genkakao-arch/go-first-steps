@@ -150,9 +150,9 @@ export function Home({ progress, notice, onOpen, onOpenTopic, onReplace, onReset
 
       <section class="card">
         <h2>Партия с KataGo</h2>
-        <p class="muted small">Прототип: проверяем, как быстро сильная программа думает прямо на телефоне.</p>
-        <button class="secondary wide" onClick={onKataGo}>
-          Открыть прототип
+        <p class="muted small">Полная партия 9×9. Тренер подсказывает важное, KataGo подстраивается под твою силу.</p>
+        <button class="primary wide" onClick={onKataGo}>
+          Играть
         </button>
       </section>
 

@@ -26,6 +26,8 @@ export interface NetEval {
   winrate: number;
   /** Score lead for the side to move, in points. */
   lead: number;
+  /** Per point, −1 (white owns) … +1 (black owns). Only when requested. */
+  ownership?: Float32Array;
 }
 
 export interface HistoryMove {
@@ -118,6 +120,7 @@ export async function evaluate(
   toPlay: 'B' | 'W',
   history: HistoryMove[],
   previous: (readonly Cell[])[] = [],
+  withOwnership = false,
 ): Promise<NetEval> {
   if (!model) throw new Error('Сеть не загружена');
   const moveHistory: Move[] = history.map((m) => ({
@@ -141,13 +144,14 @@ export async function evaluate(
   });
   const spatialT = tf.tensor4d(spatial, [1, SIZE, SIZE, 22]);
   const globalT = tf.tensor2d(global, [1, 19]);
-  const out = model.forwardPolicyValue(spatialT, globalT);
+  const out = withOwnership ? model.forward(spatialT, globalT) : { ...model.forwardPolicyValue(spatialT, globalT), ownership: null };
   try {
-    const [pol, pass, value, score] = await Promise.all([
+    const [pol, pass, value, score, own] = await Promise.all([
       out.policy.data(),
       out.policyPass.data(),
       out.value.data(),
       out.scoreValue.data(),
+      out.ownership ? out.ownership.data() : Promise.resolve(null),
     ]);
     const channels = model.policyOutChannels;
     const logits = new Float32Array(SIZE * SIZE + 1);
@@ -171,10 +175,18 @@ export async function evaluate(
       modelVersion: model.modelVersion,
     });
     const black = toPlay === 'B';
+    let ownership: Float32Array | undefined;
+    if (own) {
+      // The net predicts ownership for the side to move; convert to black's view.
+      const scale = model.postProcessParams?.outputScaleMultiplier ?? 1;
+      ownership = new Float32Array(SIZE * SIZE);
+      for (let i = 0; i < ownership.length; i++) ownership[i] = (black ? 1 : -1) * Math.tanh(own[i]! * scale);
+    }
     return {
       policy,
       winrate: black ? ev.blackWinProb : 1 - ev.blackWinProb,
       lead: black ? ev.blackScoreLead : -ev.blackScoreLead,
+      ownership,
     };
   } finally {
     spatialT.dispose();
@@ -183,5 +195,6 @@ export async function evaluate(
     out.policyPass.dispose();
     out.value.dispose();
     out.scoreValue.dispose();
+    out.ownership?.dispose();
   }
 }

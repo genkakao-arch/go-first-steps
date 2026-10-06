@@ -26,7 +26,9 @@ describe('KataGo network (CPU backend)', () => {
     let s = newGame();
     for (const m of ['D5', 'E5', 'F5', 'A9', 'E6', 'A8']) s = applyMove(s, parsePoint(m))!;
     // Black to move, white E5 has one liberty (E4).
-    const r = await search(s, 40, (st) => evaluate(st.board, st.toPlay, st.history, st.previous));
+    const r = await search(s, 40, (st, own) => evaluate(st.board, st.toPlay, st.history, st.previous, own), { ownership: true });
+    expect(r.ownership).toHaveLength(81);
+    expect(r.moves[0]!.move).toBe(r.move);
     expect(r.move).toBe(parsePoint('E4'));
   }, 120_000);
 });

@@ -8,8 +8,9 @@ import { Home } from './Home';
 import { ProblemView, type AttemptKind } from './ProblemView';
 
 const KataGoLab = lazy(() => import('./KataGoLab').then((m) => ({ default: m.KataGoLab })));
+const GameView = lazy(() => import('./GameView').then((m) => ({ default: m.GameView })));
 
-type Screen = { name: 'home' } | { name: 'katago' } | { name: 'intro'; topic: TopicId; then: string } | { name: 'problem'; id: string };
+type Screen = { name: 'home' } | { name: 'katago' } | { name: 'play' } | { name: 'intro'; topic: TopicId; then: string } | { name: 'problem'; id: string };
 
 const initial = loadLocal(PROBLEM_IDS, TOPIC_IDS);
 
@@ -87,8 +88,14 @@ export function App() {
         }}
         onReplace={(p) => update(() => p)}
         onReset={() => update(() => emptyProgress(PROBLEM_IDS[0]!))}
-        onKataGo={() => setScreen({ name: 'katago' })}
+        onKataGo={() => setScreen({ name: 'play' })}
       />
+    );
+  } else if (screen.name === 'play') {
+    body = (
+      <Suspense fallback={<p class="muted">Загрузка…</p>}>
+        <GameView onSpeedTest={() => setScreen({ name: 'katago' })} />
+      </Suspense>
     );
   } else if (screen.name === 'katago') {
     body = (

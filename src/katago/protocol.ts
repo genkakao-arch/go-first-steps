@@ -4,7 +4,7 @@ import type { GameState, SearchResult } from './search';
 export type WorkerRequest =
   | { id: number; type: 'init'; modelUrl: string; prefer: Backend | 'auto' }
   | { id: number; type: 'bench'; runs: number }
-  | { id: number; type: 'search'; state: GameState; visits: number };
+  | { id: number; type: 'search'; state: GameState; visits: number; ownership?: boolean };
 
 export type WorkerResponse =
   | { id: number; type: 'init'; backend: Backend; notes: string[]; modelName: string; modelBytes: number; ms: number }

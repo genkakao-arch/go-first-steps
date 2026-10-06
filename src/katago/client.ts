@@ -43,8 +43,8 @@ export class KataGoClient {
     return this.send<'bench'>({ type: 'bench', runs });
   }
 
-  search(state: GameState, visits: number) {
-    return this.send<'search'>({ type: 'search', state, visits });
+  search(state: GameState, visits: number, ownership = false) {
+    return this.send<'search'>({ type: 'search', state, visits, ownership });
   }
 
   dispose() {

@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { pointName } from '../go/board';
-import { KataGoClient } from '../katago/client';
+import type { KataGoClient } from '../katago/client';
+import { sharedKataGo } from '../katago/shared';
 import type { Backend } from '../katago/net';
 import { type GameState, PASS, applyMove, areaScore, newGame } from '../katago/search';
 import { Board } from './Board';
 
-// Absolute URL: the worker lives in assets/, so a relative path would resolve there.
-const MODEL_URL = new URL('models/katago-small.bin.gz', document.baseURI).href;
 const VISIT_OPTIONS = [16, 64, 200];
 
 interface Info {
@@ -39,15 +38,14 @@ export function KataGoLab() {
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
-    const c = new KataGoClient();
+    const { client: c, ready } = sharedKataGo();
     client.current = c;
-    c.init(MODEL_URL)
+    ready
       .then((r) =>
         setInfo({ backend: r.backend, modelName: r.modelName, modelMb: r.modelBytes / 1e6, loadMs: r.ms, notes: r.notes }),
       )
       .catch((e: Error) => setError(e.message))
       .finally(() => setBusy(null));
-    return () => c.dispose();
   }, []);
 
   const runBench = async () => {

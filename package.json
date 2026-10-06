@@ -12,7 +12,8 @@
     "test": "vitest run",
     "validate": "tsx scripts/validate.ts",
     "check": "npm run typecheck && npm run lint && npm test && npm run validate && npm run build",
-    "e2e": "npm run build && playwright test"
+    "e2e": "npm run build && playwright test",
+    "test:slow": "SLOW=1 vitest run tests/selfplay.test.ts"
   },
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",

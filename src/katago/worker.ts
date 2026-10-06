@@ -24,7 +24,9 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       reply({ id: req.id, type: 'bench', runs: req.runs, avgMs: times.reduce((a, b) => a + b, 0) / times.length, minMs: Math.min(...times) });
     } else {
       const t = performance.now();
-      const result = await search(req.state, req.visits, (s) => evaluate(s.board, s.toPlay, s.history, s.previous));
+      const result = await search(req.state, req.visits, (s, own) => evaluate(s.board, s.toPlay, s.history, s.previous, own), {
+        ownership: req.ownership,
+      });
       reply({ id: req.id, type: 'search', result, ms: performance.now() - t });
     }
   } catch (err) {

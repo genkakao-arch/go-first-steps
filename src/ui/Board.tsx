@@ -1,5 +1,5 @@
 import { useRef, useState } from 'preact/hooks';
-import { type Board as BoardT, type Color, SIZE, colLabel, toIndex, toXY } from '../go/board';
+import { type Board as BoardT, type Cell, type Color, SIZE, colLabel, toIndex, toXY } from '../go/board';
 
 export type MarkKind = 'good' | 'bad' | 'better';
 
@@ -13,6 +13,10 @@ interface Props {
   /** Coloured ring on a point (result of the user's move, or the solution). */
   ring: { point: number; kind: MarkKind } | null;
   onPlay: (point: number) => void;
+  /** Territory overlay: owner of each point, drawn as small squares. */
+  area?: readonly Cell[] | null;
+  /** Stones drawn faded (dead stones at the end of a game). */
+  dim?: readonly number[];
 }
 
 const STAR = [toIndex(2, 2), toIndex(6, 2), toIndex(2, 6), toIndex(6, 6), toIndex(4, 4)];
@@ -23,7 +27,7 @@ const SPAN = SIZE - 1 + MARGIN * 2;
 /** Max distance (in cells) from an intersection for a touch to count. */
 const SNAP = 0.72;
 
-export function Board({ board, toPlay, interactive, lastMove, targets, ring, onPlay }: Props) {
+export function Board({ board, toPlay, interactive, lastMove, targets, ring, onPlay, area, dim }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [ghost, setGhost] = useState<number | null>(null);
   const activePointer = useRef<number | null>(null);
@@ -87,7 +91,8 @@ export function Board({ board, toPlay, interactive, lastMove, targets, ring, onP
     const c = board[i];
     if (!c) continue;
     const [x, y] = toXY(i);
-    stones.push(<circle key={`s${i}`} class={c === 'B' ? 'stone black' : 'stone white'} cx={x} cy={y} r={0.47} />);
+    const faded = dim?.includes(i) ? ' dead' : '';
+    stones.push(<circle key={`s${i}`} class={`stone ${c === 'B' ? 'black' : 'white'}${faded}`} cx={x} cy={y} r={0.47} />);
   }
 
   const markFor = (i: number) => (board[i] === 'B' ? 'on-black' : 'on-white');
@@ -112,6 +117,11 @@ export function Board({ board, toPlay, interactive, lastMove, targets, ring, onP
       })}
       <g class="labels">{labels}</g>
       {stones}
+      {area?.map((owner, i) => {
+        if (!owner || (board[i] && !dim?.includes(i))) return null;
+        const [x, y] = toXY(i);
+        return <rect key={`a${i}`} class={`area ${owner === 'B' ? 'black' : 'white'}`} x={x - 0.17} y={y - 0.17} width={0.34} height={0.34} />;
+      })}
       {targets
         .filter((i) => board[i])
         .map((i) => {

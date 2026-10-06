@@ -174,18 +174,46 @@ test('installable PWA that works offline', async ({ page, context }) => {
   await context.setOffline(false);
 });
 
-test('KataGo prototype loads, benchmarks and answers a move', async ({ page }, info) => {
+test('game against KataGo: move, coach, persistence, resign', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Играть', exact: true }).click();
+  await expect(page.getByText('Твой ход: ты играешь чёрными.')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText('уровень 3')).toBeVisible();
+
+  await tapPoint(page, 'E5');
+  await expect(page.getByText('Твой ход.', { exact: true })).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('circle.stone.white')).toHaveCount(1);
+  await expect(page.locator('circle.stone.black')).toHaveCount(1);
+
+  await page.getByRole('button', { name: 'Что здесь происходит?' }).click();
+  await expect(page.locator('.hints')).toContainText('KataGo');
+  await page.getByRole('button', { name: 'Показать территорию' }).click();
+  await expect(page.locator('rect.area').first()).toBeVisible();
+  await page.screenshot({ path: info.outputPath('game.png'), fullPage: true });
+  await noHorizontalScroll(page);
+
+  // Closing and reopening keeps the unfinished game.
+  await page.reload();
+  await page.getByRole('button', { name: 'Играть', exact: true }).click();
+  await expect(page.getByText('Твой ход.', { exact: true })).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('circle.stone.white')).toHaveCount(1);
+
+  await page.getByRole('button', { name: 'Сдаться' }).click();
+  await page.getByRole('button', { name: 'Точно сдаться?' }).click();
+  await expect(page.getByRole('heading', { name: 'Поражение' })).toBeVisible();
+  await expect(page.getByText('KataGo станет слабее: уровень 2.')).toBeVisible();
+  await page.getByRole('button', { name: 'Новая партия' }).click();
+  await expect(page.getByText('уровень 2 · партий 1, побед 0')).toBeVisible();
+  await expect(page.locator('circle.stone')).toHaveCount(0);
+});
+
+test('KataGo speed test page works', async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto('./');
-  await page.getByRole('button', { name: 'Открыть прототип' }).click();
+  await page.getByRole('button', { name: 'Играть', exact: true }).click();
+  await page.getByRole('button', { name: 'Проверка скорости' }).click();
   await expect(page.getByText('Ускорение:')).toBeVisible({ timeout: 60_000 });
   await page.getByRole('button', { name: 'Замерить скорость' }).click();
   await expect(page.getByText(/одна оценка позиции/)).toBeVisible({ timeout: 60_000 });
-  await page.getByRole('button', { name: '16', exact: true }).click();
-  await tapPoint(page, 'E5');
-  await expect(page.getByText(/Ход белых:/)).toBeVisible({ timeout: 60_000 });
-  console.log(info.project.name, (await page.locator('.facts').innerText()).replace(/\n/g, ' | '));
-  console.log(info.project.name, (await page.locator('.feedback').innerText()).replace(/\n/g, ' '));
-  await page.screenshot({ path: info.outputPath('katago.png') });
-  await noHorizontalScroll(page);
 });

@@ -84,8 +84,10 @@ export function areaScore(board: readonly Cell[]): number {
 
 class Node {
   n = 0;
-  /** Sum of values from the perspective of the player who moved into this node. */
+  /** Sum of win values from the perspective of the player who moved into this node. */
   w = 0;
+  /** Sum of score leads from the same perspective. */
+  sl = 0;
   children: Node[] | null = null;
   constructor(
     readonly move: number,
@@ -94,38 +96,60 @@ class Node {
   ) {}
 }
 
+export interface MoveStat {
+  move: number;
+  visits: number;
+  /** Win probability for the side to move at the root if it plays this move. */
+  winrate: number;
+  /** Score lead for the side to move at the root after this move. */
+  lead: number;
+  prior: number;
+}
+
 export interface SearchResult {
+  /** Most visited move. */
   move: number;
   visits: number;
   /** Root win probability for the side to move, averaged over the search. */
   winrate: number;
-  /** Root score lead for the side to move (network estimate). */
+  /** Root score lead for the side to move, averaged over the search. */
   lead: number;
-  top: { move: number; visits: number; winrate: number; prior: number }[];
+  /** Every visited root move, most visited first. */
+  moves: MoveStat[];
+  /** Root ownership (−1 white … +1 black), when requested. */
+  ownership?: number[];
   /** Network evaluations performed. */
   evals: number;
 }
 
-export type Evaluator = (s: GameState) => Promise<NetEval>;
+export type Evaluator = (s: GameState, withOwnership: boolean) => Promise<NetEval>;
 
 const C_PUCT = 1.1;
 const FPU = 0.2;
 
-export async function search(root: GameState, visits: number, evaluate: Evaluator): Promise<SearchResult> {
+export async function search(
+  root: GameState,
+  visits: number,
+  evaluate: Evaluator,
+  opts: { ownership?: boolean } = {},
+): Promise<SearchResult> {
   const rootNode = new Node(PASS, 1, root);
   let evals = 0;
-  let rootEval: NetEval | null = null;
+  let rootOwnership: Float32Array | undefined;
 
-  const expand = async (node: Node): Promise<number> => {
+  /** Returns [value, lead] for the player who moved into `node`. */
+  const expand = async (node: Node): Promise<[number, number]> => {
     const s = node.state!;
     if (s.passes >= 2) {
       const score = areaScore(s.board);
       const moverIsBlack = s.toPlay === 'W';
-      return (score > 0) === moverIsBlack ? 1 : 0;
+      const lead = moverIsBlack ? score : -score;
+      return [lead > 0 ? 1 : 0, lead];
     }
-    const ev = await evaluate(s);
+    const isRoot = node === rootNode;
+    const ev = await evaluate(s, isRoot && !!opts.ownership);
     evals++;
-    if (node === rootNode) rootEval = ev;
+    if (isRoot) rootOwnership = ev.ownership;
     const children: Node[] = [];
     let total = 0;
     for (let i = 0; i <= POINTS; i++) {
@@ -138,16 +162,16 @@ export async function search(root: GameState, visits: number, evaluate: Evaluato
     }
     children.sort((a, b) => b.prior - a.prior);
     node.children = children.map((c) => new Node(c.move, c.prior / total, null));
-    // Value for the player who moved into this node = 1 - winrate of the side to move.
-    return 1 - ev.winrate;
+    return [1 - ev.winrate, -ev.lead];
   };
 
-  const simulate = async (node: Node): Promise<number> => {
+  const simulate = async (node: Node): Promise<[number, number]> => {
     if (!node.children) {
-      const v = await expand(node);
+      const r = await expand(node);
       node.n++;
-      node.w += v;
-      return v;
+      node.w += r[0];
+      node.sl += r[1];
+      return r;
     }
     const parentQ = node.n > 0 ? 1 - node.w / node.n : 0.5;
     const sqrtN = Math.sqrt(Math.max(1, node.n));
@@ -162,37 +186,39 @@ export async function search(root: GameState, visits: number, evaluate: Evaluato
       }
     }
     if (!best) {
-      // No legal moves at all: treat as a pass position.
       node.n++;
       node.w += 0.5;
-      return 0.5;
+      return [0.5, 0];
     }
     if (!best.state) {
       const st = applyMove(node.state!, best.move);
       if (!st) {
-        // Illegal (suicide) — drop it and retry.
         node.children = node.children.filter((c) => c !== best);
         return simulate(node);
       }
       best.state = st;
     }
-    const childValue = await simulate(best);
-    const v = 1 - childValue;
+    const [cv, cl] = await simulate(best);
+    const r: [number, number] = [1 - cv, -cl];
     node.n++;
-    node.w += v;
-    return v;
+    node.w += r[0];
+    node.sl += r[1];
+    return r;
   };
 
   for (let i = 0; i < Math.max(1, visits); i++) await simulate(rootNode);
 
-  const kids = (rootNode.children ?? []).filter((c) => c.n > 0).sort((a, b) => b.n - a.n);
-  const rootNet = rootEval as NetEval | null;
+  const moves: MoveStat[] = (rootNode.children ?? [])
+    .filter((c) => c.n > 0)
+    .sort((a, b) => b.n - a.n)
+    .map((c) => ({ move: c.move, visits: c.n, winrate: c.w / c.n, lead: c.sl / c.n, prior: c.prior }));
   return {
-    move: kids[0]?.move ?? PASS,
+    move: moves[0]?.move ?? PASS,
     visits: rootNode.n,
     winrate: rootNode.n > 0 ? 1 - rootNode.w / rootNode.n : 0.5,
-    lead: rootNet ? rootNet.lead : 0,
-    top: kids.slice(0, 5).map((c) => ({ move: c.move, visits: c.n, winrate: c.w / c.n, prior: c.prior })),
+    lead: rootNode.n > 0 ? -rootNode.sl / rootNode.n : 0,
+    moves,
+    ownership: rootOwnership ? Array.from(rootOwnership) : undefined,
     evals,
   };
 }
