@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 import { evaluate, initBackend, loadModel } from './net';
 import type { WorkerRequest, WorkerResponse } from './protocol';
-import { newGame, search } from './search';
+import { applyMove, newGame, search } from './search';
 
 const reply = (msg: WorkerResponse) => (self as unknown as DedicatedWorkerGlobalScope).postMessage(msg);
 
@@ -22,6 +22,24 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
         times.push(performance.now() - t);
       }
       reply({ id: req.id, type: 'bench', runs: req.runs, avgMs: times.reduce((a, b) => a + b, 0) / times.length, minMs: Math.min(...times) });
+    } else if (req.type === 'line') {
+      // Play the continuation (stopping at an illegal move) and judge where it leads.
+      let s = req.state;
+      let played = 0;
+      for (const m of req.moves) {
+        const n = applyMove(s, m);
+        if (!n) break;
+        s = n;
+        played++;
+      }
+      const ev = await evaluate(s.board, s.toPlay, s.history, s.previous, true);
+      reply({
+        id: req.id,
+        type: 'line',
+        ownership: Array.from(ev.ownership ?? []),
+        leadBlack: s.toPlay === 'B' ? ev.lead : -ev.lead,
+        played,
+      });
     } else {
       const t = performance.now();
       const result = await search(req.state, req.visits, (s, own) => evaluate(s.board, s.toPlay, s.history, s.previous, own), {

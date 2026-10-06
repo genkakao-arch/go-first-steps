@@ -186,6 +186,19 @@ test('game against KataGo: move, coach, persistence, resign', async ({ page }, i
   await expect(page.locator('circle.stone.white')).toHaveCount(1);
   await expect(page.locator('circle.stone.black')).toHaveCount(1);
 
+  // Both moves are explained; KataGo's plan can be stepped through on the board.
+  await expect(page.locator('.feedback h3', { hasText: 'Твой ход E5' }).or(page.locator('.feedback.wrong, .feedback.better').first())).toBeVisible();
+  const whiteNote = page.locator('.feedback', { hasText: 'Белые:' });
+  await expect(whiteNote).toBeVisible();
+  await expect(whiteNote).not.toContainText('Разбираю ход', { timeout: 60_000 });
+  await page.getByRole('button', { name: /Чего хотят белые/ }).click();
+  await expect(page.getByText(/Чего хотят белые: ход \d+ из \d+/)).toBeVisible();
+  await expect(page.locator('text.stone-label').first()).toBeVisible();
+  await page.screenshot({ path: info.outputPath('variation.png'), fullPage: true });
+  await page.getByRole('button', { name: '◀ Назад' }).click();
+  await page.getByRole('button', { name: 'Вернуться к партии' }).click();
+  await expect(page.locator('text.stone-label')).toHaveCount(0);
+
   await page.getByRole('button', { name: 'Что здесь происходит?' }).click();
   await expect(page.locator('.hints')).toContainText('KataGo');
   await page.getByRole('button', { name: 'Показать территорию' }).click();

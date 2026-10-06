@@ -25,6 +25,7 @@ function result(moves: [string, number, number?][], lead = 0): SearchResult {
     winrate: 0.5,
     visits: visits ?? 50,
     prior: 0.1,
+    pv: [],
   }));
   return { move: stats[0]!.move, visits: 100, winrate: 0.5, lead, moves: stats, evals: 100 };
 }

@@ -585,3 +585,29 @@ textarea {
 .game-stats {
   margin-bottom: 2px;
 }
+
+.stone-label {
+  font-size: 0.42px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+.stone-label.on-black {
+  fill: #f4f4f4;
+}
+.stone-label.on-white {
+  fill: #222;
+}
+
+.note-lines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 14px;
+  margin-top: 2px;
+}
+.note-lines .link {
+  padding: 6px 0;
+  min-height: 40px;
+  text-align: left;
+}

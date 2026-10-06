@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { Cell } from '../go/board';
+import { type Cell, other, pointName } from '../go/board';
 import { sharedKataGo } from '../katago/shared';
 import { type GameState, PASS, type SearchResult, applyMove, newGame } from '../katago/search';
 import { KOMI } from '../katago/rules';
 import { type CoachNote, describePosition, judgeUserMove, noteEngineMove } from '../play/coach';
+import { explainComparison, explainMove, tacticalClause } from '../play/explain';
 import { adaptLevel, chooseMove } from '../play/levels';
 import { loadPlay, movesOf, replay, savePlay, type SavedPlay } from '../play/saved';
 import { type FinalScore, finalScore, resultText } from '../play/scoring';
 import { haptic } from '../telegram';
 import { Board, type MarkKind } from './Board';
+
+const moveName = (m: number) => (m === PASS ? 'пас' : pointName(m));
 
 /** Playouts per search; enough for a stable estimate, ~1 s on a modern phone. */
 const VISITS = 120;
@@ -40,6 +43,7 @@ export function GameView({ onSpeedTest }: Props) {
   const [finished, setFinished] = useState<Finished | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [confirmResign, setConfirmResign] = useState(false);
+  const [variation, setVariation] = useState<{ label: string; from: GameState; moves: number[]; step: number } | null>(null);
   const pending = useRef<{ state: GameState; promise: Promise<SearchResult | null> } | null>(null);
   const alive = useRef(true);
   const lowStreak = useRef(0);
@@ -124,7 +128,7 @@ export function GameView({ onSpeedTest }: Props) {
     const analysisBefore = before ? await analysisFor(before) : null;
     let res: SearchResult;
     try {
-      res = (await client.search(s, VISITS)).result;
+      res = (await client.search(s, VISITS, true)).result;
     } catch (e) {
       setError((e as Error).message);
       setPhase('error');
@@ -133,13 +137,52 @@ export function GameView({ onSpeedTest }: Props) {
     if (!alive.current) return;
     const out: CoachNote[] = [];
     let undoable = false;
+
+    // 1. The learner's move: what it did, or why another move was better.
     if (before && userMove !== null) {
+      const me = before.toPlay;
       const note = judgeUserMove({ before, move: userMove, analysisBefore, analysisAfter: res });
-      if (note) {
+      if (note && (note.kind === 'mistake' || note.kind === 'inaccuracy')) {
+        undoable = true;
+        const best = analysisBefore?.moves[0];
+        if (best && best.move !== PASS) {
+          const bestLine = [best.move, ...best.pv];
+          const reply = res.moves[0];
+          const userLine = [userMove, ...(reply ? [reply.move, ...reply.pv] : [])];
+          const [la, lb] = await Promise.all([client.line(before, bestLine), client.line(before, userLine)]).catch(
+            () => [null, null] as const,
+          );
+          if (la && lb) {
+            note.details = explainComparison({
+              board: before.board,
+              learner: me,
+              move: userMove,
+              best: best.move,
+              bestEnd: la.ownership,
+              moveEnd: lb.ownership,
+              loss: note.loss ?? 0,
+            });
+          }
+          note.lines = [
+            { label: `Вариант с ${moveName(best.move)}`, from: before, moves: bestLine.slice(0, la?.played ?? bestLine.length) },
+            { label: `Что будет после ${moveName(userMove)}`, from: before, moves: userLine.slice(0, lb?.played ?? userLine.length) },
+          ];
+        }
         out.push(note);
-        undoable = note.kind === 'mistake' || note.kind === 'inaccuracy';
+      } else {
+        const lines = explainMove({
+          board: before.board,
+          move: userMove,
+          color: me,
+          learner: me,
+          before: analysisBefore?.ownership ?? null,
+          after: res.ownership ?? null,
+        });
+        if (note) out.push({ ...note, details: lines.slice(1) });
+        else out.push({ kind: 'info', title: `Твой ход ${moveName(userMove)}`, text: lines[0]!, details: lines.slice(1) });
       }
     }
+
     // KataGo resigns when the game is clearly lost for it.
     lowStreak.current = res.winrate < 0.03 && res.lead < -20 ? lowStreak.current + 1 : 0;
     if (lowStreak.current >= 3 && s.history.length > 20) {
@@ -147,9 +190,23 @@ export function GameView({ onSpeedTest }: Props) {
       await finish(s, 'engine');
       return;
     }
+
+    // 2. KataGo's move, and what it is aiming at (filled in once the next analysis is ready).
     const move = chooseMove(res, saved.level);
     const after = applyMove(s, move) ?? applyMove(s, PASS)!;
-    const engineNote = noteEngineMove(s, move);
+    const playedMove = after.history[after.history.length - 1]!.point;
+    const warning = noteEngineMove(s, playedMove);
+    const chosen = res.moves.find((m) => m.move === playedMove);
+    const engineNote: CoachNote | null =
+      playedMove === PASS
+        ? null
+        : {
+            kind: 'info',
+            title: `Белые: ${moveName(playedMove)}`,
+            text: 'Разбираю ход…',
+            lines: chosen ? [{ label: 'Чего хотят белые', from: s, moves: [playedMove, ...chosen.pv] }] : undefined,
+          };
+    if (warning) out.push(warning);
     if (engineNote) out.push(engineNote);
     if (out.some((n) => n.kind === 'mistake' || n.kind === 'warning')) haptic('warning');
     setNotes(out);
@@ -161,7 +218,25 @@ export function GameView({ onSpeedTest }: Props) {
       return;
     }
     setPhase('user');
-    analyse(after);
+    const next = analyse(after);
+    if (engineNote) {
+      void next.then((a) => {
+        if (!alive.current) return;
+        let lines = explainMove({
+          board: s.board,
+          move: playedMove,
+          color: s.toPlay,
+          learner: other(s.toPlay),
+          before: res.ownership ?? null,
+          after: a?.ownership ?? null,
+        });
+        // The atari / capture is already announced by the warning above.
+        if (warning && tacticalClause(s.board, playedMove, s.toPlay, other(s.toPlay))) lines = lines.slice(1);
+        setNotes((prev) =>
+          prev.flatMap((n) => (n !== engineNote ? [n] : lines.length ? [{ ...n, text: lines[0]!, details: lines.slice(1) }] : [])),
+        );
+      });
+    }
   };
 
   const play = (point: number) => {
@@ -175,6 +250,7 @@ export function GameView({ onSpeedTest }: Props) {
     setToast(null);
     setExplain(null);
     setConfirmResign(false);
+    setVariation(null);
     const before = game;
     setGame(next);
     persist(next);
@@ -184,6 +260,7 @@ export function GameView({ onSpeedTest }: Props) {
 
   const takeBack = () => {
     if (!undo || phase !== 'user') return;
+    setVariation(null);
     setGame(undo.state);
     persist(undo.state);
     setNotes([]);
@@ -203,6 +280,7 @@ export function GameView({ onSpeedTest }: Props) {
   const startNew = () => {
     const s = newGame();
     setGame(s);
+    setVariation(null);
     setFinished(null);
     setNotes([]);
     setExplain(null);
@@ -214,14 +292,31 @@ export function GameView({ onSpeedTest }: Props) {
     analyse(s);
   };
 
+  // A variation being viewed replaces the game position on the board.
+  let shown = game;
+  let labels: Map<number, string> | undefined;
+  if (variation) {
+    shown = variation.from;
+    labels = new Map();
+    for (const [i, m] of variation.moves.slice(0, variation.step).entries()) {
+      const n = applyMove(shown, m);
+      if (!n) break;
+      shown = n;
+      if (m !== PASS) labels.set(m, String(i + 1));
+    }
+    for (const p of [...labels.keys()]) if (!shown.board[p]) labels.delete(p);
+  }
+
   // Board decorations.
-  const last = game.history[game.history.length - 1];
+  const last = shown.history[shown.history.length - 1];
   const markNote = notes.find((n) => n.mark !== undefined);
   let ring: { point: number; kind: MarkKind } | null = null;
-  if (explain?.mark !== undefined) ring = { point: explain.mark, kind: 'good' };
+  if (variation) ring = null;
+  else if (explain?.mark !== undefined) ring = { point: explain.mark, kind: 'good' };
   else if (markNote?.mark !== undefined) ring = { point: markNote.mark, kind: markNote.kind === 'warning' ? 'bad' : 'better' };
   let area: Cell[] | null = null;
-  if (finished?.score) area = finished.score.area;
+  if (variation) area = null;
+  else if (finished?.score) area = finished.score.area;
   else if (showArea && analysis?.ownership) area = analysis.ownership.map((o) => (o > 0.3 ? 'B' : o < -0.3 ? 'W' : null));
 
   const status =
@@ -244,22 +339,23 @@ export function GameView({ onSpeedTest }: Props) {
         уровень {saved.level} · партий {saved.games}, побед {saved.wins}
       </p>
       <p class="to-play">
-        <span class="dot black" /> {status || `Коми ${KOMI}`}
+        <span class="dot black" /> {variation ? `${variation.label}: ход ${variation.step} из ${variation.moves.length}` : status || `Коми ${KOMI}`}
       </p>
 
       {error && <p class="toast">Не удалось запустить KataGo: {error}</p>}
 
       <div class="board-wrap">
         <Board
-          board={game.board}
+          board={shown.board}
+          labels={labels}
           toPlay="B"
-          interactive={phase === 'user'}
+          interactive={phase === 'user' && !variation}
           lastMove={last && last.point !== PASS ? last.point : null}
           targets={[]}
           ring={ring}
           onPlay={play}
           area={area}
-          dim={finished?.score?.dead}
+          dim={variation ? undefined : finished?.score?.dead}
         />
       </div>
       {toast && <p class="toast">{toast}</p>}
@@ -288,6 +384,20 @@ export function GameView({ onSpeedTest }: Props) {
           <div key={i} class={`feedback ${n.kind === 'good' ? 'correct' : n.kind === 'mistake' ? 'wrong' : n.kind === 'info' ? 'solution' : 'better'}`}>
             <h3>{n.title}</h3>
             <p>{n.text}</p>
+            {n.details?.map((d, j) => (
+              <p key={j}>{d}</p>
+            ))}
+            {n.lines && n.lines.some((l) => l.moves.length > 0) && (
+              <div class="note-lines">
+                {n.lines
+                  .filter((l) => l.moves.length > 0)
+                  .map((l, j) => (
+                    <button key={j} class="link" onClick={() => setVariation({ ...l, step: l.moves.length })}>
+                      ▶ {l.label}
+                    </button>
+                  ))}
+              </div>
+            )}
           </div>
         ))}
         {explain && (
@@ -300,7 +410,23 @@ export function GameView({ onSpeedTest }: Props) {
       </div>
 
       <div class="actions">
-        {phase === 'over' ? (
+        {variation ? (
+          <>
+            <button class="secondary" disabled={variation.step <= 1} onClick={() => setVariation({ ...variation, step: variation.step - 1 })}>
+              ◀ Назад
+            </button>
+            <button
+              class="secondary"
+              disabled={variation.step >= variation.moves.length}
+              onClick={() => setVariation({ ...variation, step: variation.step + 1 })}
+            >
+              Дальше ▶
+            </button>
+            <button class="primary" onClick={() => setVariation(null)}>
+              Вернуться к партии
+            </button>
+          </>
+        ) : phase === 'over' ? (
           <button class="primary" onClick={startNew}>
             Новая партия
           </button>

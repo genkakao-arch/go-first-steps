@@ -17,6 +17,8 @@ interface Props {
   area?: readonly Cell[] | null;
   /** Stones drawn faded (dead stones at the end of a game). */
   dim?: readonly number[];
+  /** Text drawn on stones, e.g. move numbers of a variation. */
+  labels?: ReadonlyMap<number, string>;
 }
 
 const STAR = [toIndex(2, 2), toIndex(6, 2), toIndex(2, 6), toIndex(6, 6), toIndex(4, 4)];
@@ -27,7 +29,7 @@ const SPAN = SIZE - 1 + MARGIN * 2;
 /** Max distance (in cells) from an intersection for a touch to count. */
 const SNAP = 0.72;
 
-export function Board({ board, toPlay, interactive, lastMove, targets, ring, onPlay, area, dim }: Props) {
+export function Board({ board, toPlay, interactive, lastMove, targets, ring, onPlay, area, dim, labels: stoneLabels }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [ghost, setGhost] = useState<number | null>(null);
   const activePointer = useRef<number | null>(null);
@@ -134,7 +136,16 @@ export function Board({ board, toPlay, interactive, lastMove, targets, ring, onP
             />
           );
         })}
-      {lastMove !== null && board[lastMove] && (
+      {stoneLabels &&
+        [...stoneLabels].map(([i, text]) => {
+          const [x, y] = toXY(i);
+          return (
+            <text key={`l${i}`} class={`stone-label ${board[i] === 'B' ? 'on-black' : 'on-white'}`} x={x} y={y + 0.02}>
+              {text}
+            </text>
+          );
+        })}
+      {lastMove !== null && board[lastMove] && !stoneLabels?.has(lastMove) && (
         <circle class={`last ${markFor(lastMove)}`} cx={toXY(lastMove)[0]} cy={toXY(lastMove)[1]} r={0.17} />
       )}
       {ring && (

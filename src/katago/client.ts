@@ -47,6 +47,11 @@ export class KataGoClient {
     return this.send<'search'>({ type: 'search', state, visits, ownership });
   }
 
+  /** KataGo's ownership map after playing `moves` from `state`. */
+  line(state: GameState, moves: number[]) {
+    return this.send<'line'>({ type: 'line', state, moves });
+  }
+
   dispose() {
     this.worker.terminate();
   }

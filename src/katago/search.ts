@@ -104,6 +104,8 @@ export interface MoveStat {
   /** Score lead for the side to move at the root after this move. */
   lead: number;
   prior: number;
+  /** Expected continuation after this move (most visited replies), excluding the move itself. */
+  pv: number[];
 }
 
 export interface SearchResult {
@@ -125,6 +127,7 @@ export interface SearchResult {
 export type Evaluator = (s: GameState, withOwnership: boolean) => Promise<NetEval>;
 
 const C_PUCT = 1.1;
+const PV_DEPTH = 8;
 const FPU = 0.2;
 
 export async function search(
@@ -208,10 +211,21 @@ export async function search(
 
   for (let i = 0; i < Math.max(1, visits); i++) await simulate(rootNode);
 
+  const principal = (node: Node): number[] => {
+    const line: number[] = [];
+    let cur = node;
+    while (line.length < PV_DEPTH && cur.children) {
+      const next = cur.children.reduce<Node | null>((a, c) => (c.n > (a?.n ?? 0) ? c : a), null);
+      if (!next || next.n < 2) break;
+      line.push(next.move);
+      cur = next;
+    }
+    return line;
+  };
   const moves: MoveStat[] = (rootNode.children ?? [])
     .filter((c) => c.n > 0)
     .sort((a, b) => b.n - a.n)
-    .map((c) => ({ move: c.move, visits: c.n, winrate: c.w / c.n, lead: c.sl / c.n, prior: c.prior }));
+    .map((c) => ({ move: c.move, visits: c.n, winrate: c.w / c.n, lead: c.sl / c.n, prior: c.prior, pv: principal(c) }));
   return {
     move: moves[0]?.move ?? PASS,
     visits: rootNode.n,

@@ -14,6 +14,10 @@ export interface CoachNote {
   mark?: number;
   /** Estimated points lost by the move, when known. */
   loss?: number;
+  /** Longer explanation, one sentence per item. */
+  details?: string[];
+  /** Variations that can be stepped through on the board. */
+  lines?: { label: string; from: GameState; moves: number[] }[];
 }
 
 /** Point loss from which a move is reported at all ("только важное"). */
@@ -41,7 +45,10 @@ export function groupPhrase(g: Group, owner: 'mine' | 'white', grammaticalCase: 
   const adj =
     owner === 'mine' ? (grammaticalCase === 'nom' ? 'твоя' : 'твою') : grammaticalCase === 'nom' ? 'белая' : 'белую';
   const noun = grammaticalCase === 'nom' ? 'группа' : 'группу';
-  return `${adj} ${noun} из ${g.stones.length} ${stonesWord(g.stones.length)} у ${anchor}`;
+  const n = g.stones.length;
+  // Genitive after «из»: «из 2 камней», «из 21 камня».
+  const gen = n % 10 === 1 && n % 100 !== 11 ? 'камня' : 'камней';
+  return `${adj} ${noun} из ${n} ${gen} у ${anchor}`;
 }
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
