@@ -153,3 +153,22 @@ test('dark theme renders', async ({ page }, info) => {
   await page.screenshot({ path: info.outputPath('dark.png') });
   await noHorizontalScroll(page);
 });
+
+test('installable PWA that works offline', async ({ page, context }) => {
+  await page.goto('./');
+  const manifest = await page.evaluate(async () => {
+    const href = document.querySelector('link[rel="manifest"]')?.getAttribute('href');
+    return href ? (await fetch(href)).json() : null;
+  });
+  expect(manifest?.display).toBe('standalone');
+  expect(manifest?.icons?.length).toBeGreaterThanOrEqual(2);
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await expect(page.locator('.install')).toBeVisible();
+
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.getByText('/ 100')).toBeVisible();
+  await page.getByRole('button', { name: 'Начать обучение' }).click();
+  await expect(page.getByRole('heading', { name: 'Свободы и захват' })).toBeVisible();
+  await context.setOffline(false);
+});

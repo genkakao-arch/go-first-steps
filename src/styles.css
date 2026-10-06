@@ -518,3 +518,11 @@ textarea {
 .actions > button {
   flex: 1 1 140px;
 }
+
+.install p {
+  margin-bottom: 4px;
+}
+.install .link {
+  padding: 6px 0 0;
+  min-height: 36px;
+}

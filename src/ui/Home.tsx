@@ -2,6 +2,8 @@ import { useState } from 'preact/hooks';
 import type { TopicId } from '../data/types';
 import { PROBLEMS, TOPICS, continueTarget, indexOf, isOpen, isTopicOpen, problemsOf, solvedCount, topicById } from '../course';
 import { type Progress, problemState } from '../progress';
+import { hideInstallHint, installHintHidden, isIOS, isStandalone } from '../pwa';
+import { inTelegram } from '../telegram';
 import { DataPanel } from './DataPanel';
 
 interface Props {
@@ -15,6 +17,7 @@ interface Props {
 
 export function Home({ progress, notice, onOpen, onOpenTopic, onReplace, onReset }: Props) {
   const [showAll, setShowAll] = useState(false);
+  const [installHint, setInstallHint] = useState(() => !isStandalone() && !inTelegram() && !installHintHidden());
   const solved = solvedCount(progress);
   const target = continueTarget(progress);
   const targetProblem = PROBLEMS[indexOf(target)]!;
@@ -29,6 +32,28 @@ export function Home({ progress, notice, onOpen, onOpenTopic, onReplace, onReset
       </header>
 
       {notice && <p class="notice">{notice}</p>}
+
+      {installHint && (
+        <section class="card install">
+          <p>
+            <b>Установи на телефон</b> — приложение будет открываться с иконки и работать без интернета.
+          </p>
+          <p class="muted small">
+            {isIOS()
+              ? 'В Safari: кнопка «Поделиться» → «На экран „Домой“».'
+              : 'В меню браузера: «Установить приложение» или «Добавить на главный экран».'}
+          </p>
+          <button
+            class="link"
+            onClick={() => {
+              hideInstallHint();
+              setInstallHint(false);
+            }}
+          >
+            Скрыть
+          </button>
+        </section>
+      )}
 
       <section class="card hero">
         <div class="progress-line">
