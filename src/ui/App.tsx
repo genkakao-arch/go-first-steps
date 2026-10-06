@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'preact/compat';
 import { useEffect, useState } from 'preact/hooks';
 import { PROBLEMS, PROBLEM_IDS, TOPIC_IDS, indexOf, topicById, topicEntry } from '../course';
 import type { TopicId } from '../data/types';
@@ -6,7 +7,9 @@ import { inTelegram, setBackButton } from '../telegram';
 import { Home } from './Home';
 import { ProblemView, type AttemptKind } from './ProblemView';
 
-type Screen = { name: 'home' } | { name: 'intro'; topic: TopicId; then: string } | { name: 'problem'; id: string };
+const KataGoLab = lazy(() => import('./KataGoLab').then((m) => ({ default: m.KataGoLab })));
+
+type Screen = { name: 'home' } | { name: 'katago' } | { name: 'intro'; topic: TopicId; then: string } | { name: 'problem'; id: string };
 
 const initial = loadLocal(PROBLEM_IDS, TOPIC_IDS);
 
@@ -84,7 +87,14 @@ export function App() {
         }}
         onReplace={(p) => update(() => p)}
         onReset={() => update(() => emptyProgress(PROBLEM_IDS[0]!))}
+        onKataGo={() => setScreen({ name: 'katago' })}
       />
+    );
+  } else if (screen.name === 'katago') {
+    body = (
+      <Suspense fallback={<p class="muted">Загрузка…</p>}>
+        <KataGoLab />
+      </Suspense>
     );
   } else if (screen.name === 'intro') {
     const t = topicById(screen.topic);

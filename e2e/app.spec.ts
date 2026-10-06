@@ -5,6 +5,7 @@ const COLS = 'ABCDEFGHJ';
 const VB = { x: -0.95, y: -0.95, w: 9.9, h: 9.9 };
 
 async function pointPx(page: Page, name: string, dx = 0, dy = 0) {
+  await page.locator('svg.board').scrollIntoViewIfNeeded();
   const box = (await page.locator('svg.board').boundingBox())!;
   const x = COLS.indexOf(name[0]!);
   const y = 9 - Number(name.slice(1));
@@ -171,4 +172,20 @@ test('installable PWA that works offline', async ({ page, context }) => {
   await page.getByRole('button', { name: 'Начать обучение' }).click();
   await expect(page.getByRole('heading', { name: 'Свободы и захват' })).toBeVisible();
   await context.setOffline(false);
+});
+
+test('KataGo prototype loads, benchmarks and answers a move', async ({ page }, info) => {
+  test.setTimeout(120_000);
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Открыть прототип' }).click();
+  await expect(page.getByText('Ускорение:')).toBeVisible({ timeout: 60_000 });
+  await page.getByRole('button', { name: 'Замерить скорость' }).click();
+  await expect(page.getByText(/одна оценка позиции/)).toBeVisible({ timeout: 60_000 });
+  await page.getByRole('button', { name: '16', exact: true }).click();
+  await tapPoint(page, 'E5');
+  await expect(page.getByText(/Ход белых:/)).toBeVisible({ timeout: 60_000 });
+  console.log(info.project.name, (await page.locator('.facts').innerText()).replace(/\n/g, ' | '));
+  console.log(info.project.name, (await page.locator('.feedback').innerText()).replace(/\n/g, ' '));
+  await page.screenshot({ path: info.outputPath('katago.png') });
+  await noHorizontalScroll(page);
 });

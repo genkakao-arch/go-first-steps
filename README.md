@@ -25,6 +25,12 @@
 - `src/data/problems/*.ts` — задачи; `src/data/topics.ts` — темы и вводные тексты с новыми терминами.
 - `src/progress.ts` — прогресс в `localStorage`, копия в Telegram CloudStorage (в Telegram); повреждённые данные санитизируются.
 
+## KataGo (прототип)
+
+Экран «Партия с KataGo» запускает нейросеть KataGo прямо в браузере, без сервера: TensorFlow.js в Web Worker
+(WebGPU → WASM → CPU), сеть `public/models/katago-small.bin.gz` (b6c96, 3,8 МБ), простой PUCT-поиск (`src/katago/search.ts`).
+Загрузчик сети и подготовка входов взяты из web-katrain (MIT), см. `src/katago/vendor/README.md`.
+
 ## Запуск из канала
 
 Main Mini App бота `@gazeta_orbita_bot` (BotFather → Bot Settings → Configure Mini App) + закреплённый пост в канале со ссылкой `https://t.me/gazeta_orbita_bot?startapp`. Webhook бота не затрагивается.

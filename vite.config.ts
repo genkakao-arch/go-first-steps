@@ -28,11 +28,22 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png}'],
+        // The KataGo worker bundles TensorFlow.js.
+        maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         navigateFallback: 'index.html',
+        runtimeCaching: [
+          {
+            // Network weights and WASM binaries: downloaded once, then kept offline.
+            urlPattern: ({ url }) => /\.(gz|wasm)$/.test(url.pathname),
+            handler: 'CacheFirst',
+            options: { cacheName: 'katago', expiration: { maxEntries: 10 } },
+          },
+        ],
       },
     }),
   ],
   base: './',
+  worker: { format: 'es' },
   build: { target: 'es2020' },
   test: { environment: 'node', include: ['tests/**/*.test.ts'] },
 });

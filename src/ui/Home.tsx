@@ -13,9 +13,10 @@ interface Props {
   onOpenTopic: (topic: TopicId) => void;
   onReplace: (p: Progress) => void;
   onReset: () => void;
+  onKataGo: () => void;
 }
 
-export function Home({ progress, notice, onOpen, onOpenTopic, onReplace, onReset }: Props) {
+export function Home({ progress, notice, onOpen, onOpenTopic, onReplace, onReset, onKataGo }: Props) {
   const [showAll, setShowAll] = useState(false);
   const [installHint, setInstallHint] = useState(() => !isStandalone() && !inTelegram() && !installHintHidden());
   const solved = solvedCount(progress);
@@ -145,6 +146,14 @@ export function Home({ progress, notice, onOpen, onOpenTopic, onReplace, onReset
             </ul>
           </>
         )}
+      </section>
+
+      <section class="card">
+        <h2>Партия с KataGo</h2>
+        <p class="muted small">Прототип: проверяем, как быстро сильная программа думает прямо на телефоне.</p>
+        <button class="secondary wide" onClick={onKataGo}>
+          Открыть прототип
+        </button>
       </section>
 
       <DataPanel progress={progress} onReplace={onReplace} onReset={onReset} />
