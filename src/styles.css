@@ -611,3 +611,11 @@ textarea {
   min-height: 40px;
   text-align: left;
 }
+
+.zone {
+  fill: var(--accent);
+  opacity: 0.22;
+}
+.reveal-btn {
+  margin-top: 4px;
+}

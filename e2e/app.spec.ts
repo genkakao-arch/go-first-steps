@@ -200,7 +200,14 @@ test('game against KataGo: move, coach, persistence, resign', async ({ page }, i
   await expect(page.locator('text.stone-label')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Что здесь происходит?' }).click();
-  await expect(page.locator('.hints')).toContainText('KataGo');
+  await expect(page.locator('.hints')).toContainText('Хорошие ходы сейчас — в области');
+  // An area is highlighted; the exact point stays hidden until asked for.
+  await expect(page.locator('rect.zone').first()).toBeVisible();
+  await expect(page.locator('circle.ring')).toHaveCount(0);
+  await page.locator('.hints').getByRole('button', { name: 'Показать точный ход' }).click();
+  await expect(page.locator('.hints')).toContainText('KataGo сыграл бы');
+  await expect(page.locator('circle.ring')).toHaveCount(1);
+  await expect(page.locator('rect.zone')).toHaveCount(0);
   await page.getByRole('button', { name: 'Показать территорию' }).click();
   await expect(page.locator('rect.area').first()).toBeVisible();
   await page.screenshot({ path: info.outputPath('game.png'), fullPage: true });

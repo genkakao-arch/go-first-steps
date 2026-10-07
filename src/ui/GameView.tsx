@@ -3,7 +3,7 @@ import { type Cell, other, pointName } from '../go/board';
 import { sharedKataGo } from '../katago/shared';
 import { type GameState, PASS, type SearchResult, applyMove, newGame } from '../katago/search';
 import { KOMI } from '../katago/rules';
-import { type CoachNote, describePosition, judgeUserMove, noteEngineMove } from '../play/coach';
+import { type CoachNote, type PositionView, describePosition, judgeUserMove, noteEngineMove } from '../play/coach';
 import { explainComparison, explainMove, tacticalClause } from '../play/explain';
 import { adaptLevel, chooseMove } from '../play/levels';
 import { loadPlay, movesOf, replay, savePlay, type SavedPlay } from '../play/saved';
@@ -36,7 +36,9 @@ export function GameView({ onSpeedTest }: Props) {
   const [phase, setPhase] = useState<Phase>('loading');
   const [error, setError] = useState<string | null>(null);
   const [notes, setNotes] = useState<CoachNote[]>([]);
-  const [explain, setExplain] = useState<{ lines: string[]; mark?: number } | null>(null);
+  const [explain, setExplain] = useState<PositionView | null>(null);
+  /** Notes (by index; -1 = the position description) whose exact move was revealed. */
+  const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [undo, setUndo] = useState<{ state: GameState; analysis: SearchResult | null } | null>(null);
   const [showArea, setShowArea] = useState(false);
   const [analysis, setAnalysis] = useState<SearchResult | null>(null);
@@ -154,7 +156,7 @@ export function GameView({ onSpeedTest }: Props) {
             () => [null, null] as const,
           );
           if (la && lb) {
-            note.details = explainComparison({
+            const cmp = {
               board: before.board,
               learner: me,
               move: userMove,
@@ -162,11 +164,18 @@ export function GameView({ onSpeedTest }: Props) {
               bestEnd: la.ownership,
               moveEnd: lb.ownership,
               loss: note.loss ?? 0,
-            });
+            };
+            note.details = explainComparison({ ...cmp, hideBest: true });
+            note.revealDetails = explainComparison(cmp);
           }
           note.lines = [
-            { label: `Вариант с ${moveName(best.move)}`, from: before, moves: bestLine.slice(0, la?.played ?? bestLine.length) },
             { label: `Что будет после ${moveName(userMove)}`, from: before, moves: userLine.slice(0, lb?.played ?? userLine.length) },
+            {
+              label: `Вариант с ${moveName(best.move)}`,
+              from: before,
+              moves: bestLine.slice(0, la?.played ?? bestLine.length),
+              hidden: true,
+            },
           ];
         }
         out.push(note);
@@ -188,6 +197,7 @@ export function GameView({ onSpeedTest }: Props) {
     lowStreak.current = res.winrate < 0.03 && res.lead < -20 ? lowStreak.current + 1 : 0;
     if (lowStreak.current >= 3 && s.history.length > 20) {
       setNotes(out);
+    setRevealed(new Set());
       await finish(s, 'engine');
       return;
     }
@@ -211,6 +221,7 @@ export function GameView({ onSpeedTest }: Props) {
     if (engineNote) out.push(engineNote);
     if (out.some((n) => n.kind === 'mistake' || n.kind === 'warning')) haptic('warning');
     setNotes(out);
+    setRevealed(new Set());
     setUndo(undoable && before ? { state: before, analysis: analysisBefore } : null);
     setGame(after);
     persist(after);
@@ -277,6 +288,11 @@ export function GameView({ onSpeedTest }: Props) {
   const whatsHappening = async () => {
     const a = analysis ?? (await analysisFor(game));
     setExplain(describePosition(game, a));
+    setRevealed((prev) => {
+      const next = new Set(prev);
+      next.delete(-1);
+      return next;
+    });
   };
 
   const startNew = () => {
@@ -311,11 +327,21 @@ export function GameView({ onSpeedTest }: Props) {
 
   // Board decorations.
   const last = shown.history[shown.history.length - 1];
-  const markNote = notes.find((n) => n.mark !== undefined);
+  // Hints show an area; the exact point appears only after "Показать точный ход".
   let ring: { point: number; kind: MarkKind } | null = null;
-  if (variation) ring = null;
-  else if (explain?.mark !== undefined) ring = { point: explain.mark, kind: 'good' };
-  else if (markNote?.mark !== undefined) ring = { point: markNote.mark, kind: markNote.kind === 'warning' ? 'bad' : 'better' };
+  let zone: number[] | undefined;
+  if (!variation) {
+    if (explain) {
+      if (revealed.has(-1) && explain.mark !== undefined) ring = { point: explain.mark, kind: 'good' };
+      else zone = explain.zone?.points;
+    } else {
+      const i = notes.findIndex((n) => n.mark !== undefined || n.zone);
+      const n = notes[i];
+      if (n && revealed.has(i) && n.mark !== undefined) ring = { point: n.mark, kind: 'better' };
+      else if (n) zone = n.zone?.points;
+    }
+  }
+  const reveal = (i: number) => setRevealed((prev) => new Set(prev).add(i));
   let area: Cell[] | null = null;
   if (variation) area = null;
   else if (finished?.score) area = finished.score.area;
@@ -358,6 +384,7 @@ export function GameView({ onSpeedTest }: Props) {
           onPlay={play}
           area={area}
           dim={variation ? undefined : finished?.score?.dead}
+          zone={zone}
         />
       </div>
       {toast && <p class="toast">{toast}</p>}
@@ -382,17 +409,38 @@ export function GameView({ onSpeedTest }: Props) {
             </p>
           </div>
         )}
+        {explain && (
+          <div class="hints">
+            {explain.lines.map((l, i) => (
+              <p key={i}>{l}</p>
+            ))}
+            {explain.reveal &&
+              (revealed.has(-1) ? (
+                <p>{explain.reveal}</p>
+              ) : (
+                <button class="link reveal-btn" onClick={() => reveal(-1)}>
+                  Показать точный ход
+                </button>
+              ))}
+          </div>
+        )}
         {notes.map((n, i) => (
           <div key={i} class={`feedback ${n.kind === 'good' ? 'correct' : n.kind === 'mistake' ? 'wrong' : n.kind === 'info' ? 'solution' : 'better'}`}>
             <h3>{n.title}</h3>
             <p>{n.text}</p>
-            {n.details?.map((d, j) => (
+            {(revealed.has(i) && n.revealDetails ? n.revealDetails : n.details)?.map((d, j) => (
               <p key={j}>{d}</p>
             ))}
-            {n.lines && n.lines.some((l) => l.moves.length > 0) && (
+            {revealed.has(i) && n.reveal && <p>{n.reveal}</p>}
+            {n.reveal && !revealed.has(i) && (
+              <button class="link reveal-btn" onClick={() => reveal(i)}>
+                Показать точный ход
+              </button>
+            )}
+            {n.lines && n.lines.some((l) => l.moves.length > 0 && (!l.hidden || revealed.has(i))) && (
               <div class="note-lines">
                 {n.lines
-                  .filter((l) => l.moves.length > 0)
+                  .filter((l) => l.moves.length > 0 && (!l.hidden || revealed.has(i)))
                   .map((l, j) => (
                     <button key={j} class="link" onClick={() => setVariation({ ...l, step: l.moves.length })}>
                       ▶ {l.label}
@@ -402,13 +450,6 @@ export function GameView({ onSpeedTest }: Props) {
             )}
           </div>
         ))}
-        {explain && (
-          <div class="hints">
-            {explain.lines.map((l, i) => (
-              <p key={i}>{l}</p>
-            ))}
-          </div>
-        )}
       </div>
 
       <div class="actions">

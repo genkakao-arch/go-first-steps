@@ -19,6 +19,8 @@ interface Props {
   dim?: readonly number[];
   /** Text drawn on stones, e.g. move numbers of a variation. */
   labels?: ReadonlyMap<number, string>;
+  /** Highlighted area (hint where to look). */
+  zone?: readonly number[];
 }
 
 const STAR = [toIndex(2, 2), toIndex(6, 2), toIndex(2, 6), toIndex(6, 6), toIndex(4, 4)];
@@ -29,7 +31,7 @@ const SPAN = SIZE - 1 + MARGIN * 2;
 /** Max distance (in cells) from an intersection for a touch to count. */
 const SNAP = 0.72;
 
-export function Board({ board, toPlay, interactive, lastMove, targets, ring, onPlay, area, dim, labels: stoneLabels }: Props) {
+export function Board({ board, toPlay, interactive, lastMove, targets, ring, onPlay, area, dim, labels: stoneLabels, zone }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [ghost, setGhost] = useState<number | null>(null);
   const activePointer = useRef<number | null>(null);
@@ -112,6 +114,15 @@ export function Board({ board, toPlay, interactive, lastMove, targets, ring, onP
       onPointerCancel={onCancel}
     >
       <rect class="wood" x={MIN} y={MIN} width={SPAN} height={SPAN} rx={0.25} />
+      {zone?.map((i) => {
+        const [x, y] = toXY(i);
+        // Clipped to the grid so edge areas do not spill into the coordinate margin.
+        const x0 = Math.max(x - 0.5, 0);
+        const y0 = Math.max(y - 0.5, 0);
+        const x1 = Math.min(x + 0.5, SIZE - 1);
+        const y1 = Math.min(y + 0.5, SIZE - 1);
+        return <rect key={`z${i}`} class="zone" x={x0} y={y0} width={x1 - x0} height={y1 - y0} />;
+      })}
       <g class="grid">{lines}</g>
       {STAR.map((i) => {
         const [x, y] = toXY(i);

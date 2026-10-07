@@ -3,38 +3,15 @@
 //  - KataGo's ownership map before/after a move (who will own which area, which groups live);
 //  - KataGo's expected continuation (principal variation).
 
-import { type Board, type Color, type Group, SIZE, allGroups, neighbors, other, pointName, toXY } from '../go/board';
+import { type Board, type Color, type Group, SIZE, allGroups, neighbors, other, pointName } from '../go/board';
 import { PASS } from '../katago/search';
 import { groupPhrase, moveEffect, stonesWord } from './coach';
+import { regionName, regionOf } from './zones';
 
 export type Ownership = readonly number[];
 
-// ---------------------------------------------------------------- regions
-
-const COLS = ['left', 'center', 'right'] as const;
-const ROWS = ['top', 'middle', 'bottom'] as const;
-
-const REGION_NAMES: Record<string, { nom: string; acc: string }> = {
-  'left-top': { nom: 'левый верхний угол', acc: 'левый верхний угол' },
-  'center-top': { nom: 'верхняя сторона', acc: 'верхнюю сторону' },
-  'right-top': { nom: 'правый верхний угол', acc: 'правый верхний угол' },
-  'left-middle': { nom: 'левая сторона', acc: 'левую сторону' },
-  'center-middle': { nom: 'центр', acc: 'центр' },
-  'right-middle': { nom: 'правая сторона', acc: 'правую сторону' },
-  'left-bottom': { nom: 'левый нижний угол', acc: 'левый нижний угол' },
-  'center-bottom': { nom: 'нижняя сторона', acc: 'нижнюю сторону' },
-  'right-bottom': { nom: 'правый нижний угол', acc: 'правый нижний угол' },
-};
-
-export function regionOf(point: number): string {
-  const [x, y] = toXY(point);
-  const band = (v: number) => (v <= 2 ? 0 : v <= 5 ? 1 : 2);
-  return `${COLS[band(x)]}-${ROWS[band(y)]}`;
-}
-
-export function regionName(key: string, grammaticalCase: 'nom' | 'acc' = 'nom'): string {
-  return REGION_NAMES[key]![grammaticalCase];
-}
+// Regions live in zones.ts; re-exported here for existing callers.
+export { regionName, regionOf } from './zones';
 
 const sign = (me: Color) => (me === 'B' ? 1 : -1);
 
@@ -209,11 +186,14 @@ export function explainComparison(args: {
   bestEnd: Ownership;
   moveEnd: Ownership;
   loss: number;
+  /** Talk about "a move in this area" instead of naming the better point. */
+  hideBest?: boolean;
 }): string[] {
   const { board, learner, move, best, bestEnd, moveEnd } = args;
   const out: string[] = [];
+  const bestName = args.hideBest ? 'хода в подсвеченной области' : pointName(best);
   const tac = tacticalClause(board, best, learner, learner);
-  if (tac) out.push(`${pointName(best)} ${tac}.`);
+  if (tac) out.push(args.hideBest ? `Хороший ход в подсвеченной области ${tac}.` : `${pointName(best)} ${tac}.`);
   // A group whose fate is worse for the learner after the played move than after the best one.
   const fate = groupChanges(board, bestEnd, moveEnd).find((c) => helps(c, other(learner)));
   if (fate) {
@@ -223,13 +203,13 @@ export function explainComparison(args: {
     const statusWord = (s: Status) =>
       s === 'safe' ? (single ? 'живой' : 'живая') : s === 'dead' ? (single ? 'мёртвый' : 'мёртвая') : 'под угрозой';
     out.push(
-      `${cap(who)}: после ${pointName(best)} — ${statusWord(fate.from)}, после ${move === PASS ? 'паса' : pointName(move)} — ${statusWord(fate.to)}.`,
+      `${cap(who)}: после ${bestName} — ${statusWord(fate.from)}, после ${move === PASS ? 'паса' : pointName(move)} — ${statusWord(fate.to)}.`,
     );
   }
   const d = regionDeltas(moveEnd, bestEnd, learner)[0];
   if (d && d.delta >= 2 && out.length < 3) {
     const yours = regionName(d.region).includes('сторона') ? 'твоей' : 'твоим';
-    out.push(`После ${pointName(best)} ${regionName(d.region)} получается ${yours} примерно на ${pts(d.delta)} больше.`);
+    out.push(`После ${bestName} ${regionName(d.region)} получается ${yours} примерно на ${pts(d.delta)} больше.`);
   }
   if (out.length === 0) out.push(`KataGo оценивает разницу в ${pts(args.loss)}, но она распределена по всей доске.`);
   return out;

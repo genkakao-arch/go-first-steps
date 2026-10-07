@@ -3,6 +3,7 @@
 
 import { type Board, type Color, type Group, allGroups, groupAt, other, play, pointName } from '../go/board';
 import { PASS, type GameState, type SearchResult } from '../katago/search';
+import { type Zone, goodZone } from './zones';
 
 export type NoteKind = 'good' | 'inaccuracy' | 'mistake' | 'warning' | 'info';
 
@@ -10,14 +11,20 @@ export interface CoachNote {
   kind: NoteKind;
   title: string;
   text: string;
-  /** Point to highlight (usually KataGo's better move). */
+  /** KataGo's better move — shown only after "Показать точный ход". */
   mark?: number;
+  /** Area to highlight instead of naming the point. */
+  zone?: Zone;
+  /** Text that names the exact move, revealed on request. */
+  reveal?: string;
+  /** Details that name the exact move, replacing `details` once revealed. */
+  revealDetails?: string[];
   /** Estimated points lost by the move, when known. */
   loss?: number;
   /** Longer explanation, one sentence per item. */
   details?: string[];
   /** Variations that can be stepped through on the board. */
-  lines?: { label: string; from: GameState; moves: number[] }[];
+  lines?: { label: string; from: GameState; moves: number[]; hidden?: boolean }[];
 }
 
 /** Point loss from which a move is reported at all ("только важное"). */
@@ -99,7 +106,7 @@ function lossOf(move: number, before: SearchResult | null, afterForOpponent: Sea
 
 const round = (x: number) => Math.round(x);
 
-/** Why KataGo's better move is better, from what it does on the board. */
+/** Why KataGo's better move is better, from what it does on the board (names the point). */
 function bestMoveReason(b: Board, best: number, color: Color): string | null {
   const e = moveEffect(b, best, color);
   if (!e) return null;
@@ -109,6 +116,16 @@ function bestMoveReason(b: Board, best: number, color: Color): string | null {
   if (e.atari.length > 0) return `${at} ставит атари: ${groupPhrase(e.atari[0]!, 'white', 'nom')} остаётся с одной свободой.`;
   if (e.connected) return `${at} соединяет твои камни в одну группу.`;
   return null;
+}
+
+/** What to look for in the highlighted area, without naming the point. */
+export function areaReason(b: Board, best: number, color: Color): string {
+  const e = moveEffect(b, best, color);
+  if (e?.captured.length) return 'Там можно захватить камни.';
+  if (e?.saved.length) return 'Там твоей группе нужна помощь.';
+  if (e?.atari.length) return 'Там можно поставить атари.';
+  if (e?.connected) return 'Там стоит соединить свои камни.';
+  return 'Подумай, что там важнее: своя территория, чужая территория или сила групп.';
 }
 
 export function judgeUserMove(args: {
@@ -123,17 +140,22 @@ export function judgeUserMove(args: {
   const b = before.board;
   const loss = lossOf(move, analysisBefore, analysisAfter);
   const best = analysisBefore?.moves[0]?.move;
+  const zone = goodZone(analysisBefore) ?? undefined;
+  const where = zone ? ` Посмотри в подсвеченной области: ${zone.name}.` : '';
   const severity = (l: number): NoteKind => (l >= MISTAKE_LOSS ? 'mistake' : 'inaccuracy');
   const title = (k: NoteKind) => (k === 'mistake' ? 'Ошибка' : 'Неточность');
   const lossText = (l: number) => `По оценке KataGo это стоит около ${round(l)} ${round(l) === 1 ? 'очка' : 'очков'}.`;
+  const exact = (extra?: string | null) => `Точный ход KataGo: ${pointName(best!)}.${extra ? ` ${extra}` : ''}`;
 
   if (move === PASS) {
     if (loss !== null && loss >= REPORT_LOSS && best !== undefined && best !== PASS) {
       return {
         kind: severity(loss),
         title: 'Рано пасовать',
-        text: `На доске ещё есть полезные ходы, например ${pointName(best)}. ${lossText(loss)}`,
+        text: `На доске ещё есть полезные ходы. ${lossText(loss)}${where}`,
         mark: best,
+        zone,
+        reveal: exact(),
         loss,
       };
     }
@@ -144,7 +166,7 @@ export function judgeUserMove(args: {
   const after = play(b, move, me);
   if (!eff || !after.ok) return null;
   const own = groupAt(after.board, move)!;
-  const bestDiffers = best !== undefined && best !== move;
+  const bestDiffers = best !== undefined && best !== move && best !== PASS;
 
   // 1. The move leaves its own group in atari.
   if (loss !== null && loss >= TACTIC_LOSS && own.liberties.length === 1 && play(after.board, own.liberties[0]!, opp).ok) {
@@ -152,8 +174,10 @@ export function judgeUserMove(args: {
     return {
       kind: k,
       title: title(k),
-      text: `После этого хода у твоей группы одна свобода — ${pointName(own.liberties[0]!)}. Белые могут сразу её захватить. ${lossText(loss)}`,
+      text: `После этого хода у твоей группы осталась одна свобода — белые могут сразу её захватить. ${lossText(loss)}${bestDiffers ? where : ''}`,
       mark: bestDiffers ? best : undefined,
+      zone: bestDiffers ? zone : undefined,
+      reveal: bestDiffers ? exact(bestMoveReason(b, best!, me)) : undefined,
       loss,
     };
   }
@@ -166,19 +190,24 @@ export function judgeUserMove(args: {
       return {
         kind: k,
         title: title(k),
-        text: `Можно было захватить ${bestEff.captured.length} ${stonesWord(bestEff.captured.length)} ходом ${pointName(best!)}: у них оставалась одна свобода. ${lossText(loss)}`,
+        text: `Можно было захватить ${bestEff.captured.length} ${stonesWord(bestEff.captured.length)}: у них оставалась одна свобода. ${lossText(loss)}${where}`,
         mark: best,
+        zone,
+        reveal: exact(),
         loss,
       };
     }
     // 3. Our group was in atari and needed saving.
     if (bestEff && bestEff.saved.length > 0 && eff.saved.length === 0) {
       const k = severity(loss);
+      const g = bestEff.saved[0]!;
       return {
         kind: k,
         title: title(k),
-        text: `${cap(groupPhrase(bestEff.saved[0]!, 'mine', 'nom'))} ${was(bestEff.saved[0]!)} в атари. Стоило спасти ходом ${pointName(best!)}. ${lossText(loss)}`,
+        text: `${cap(groupPhrase(g, 'mine', 'nom'))} ${was(g)} в атари — ${g.stones.length === 1 ? 'его' : 'её'} стоило спасти. ${lossText(loss)}`,
         mark: best,
+        zone,
+        reveal: exact(),
         loss,
       };
     }
@@ -187,12 +216,13 @@ export function judgeUserMove(args: {
   // 4. A plain loss in points.
   if (loss !== null && loss >= REPORT_LOSS && bestDiffers) {
     const k = severity(loss);
-    const reason = bestMoveReason(b, best!, me);
     return {
       kind: k,
       title: title(k),
-      text: `${lossText(loss)} Сильнее был ход ${pointName(best!)}.${reason ? ` ${reason}` : ''}`,
+      text: `${lossText(loss)} Сильнее было играть в другом месте.${where} ${areaReason(b, best!, me)}`,
       mark: best,
+      zone,
+      reveal: exact(bestMoveReason(b, best!, me)),
       loss,
     };
   }
@@ -233,15 +263,22 @@ export function noteEngineMove(before: GameState, move: number): CoachNote | nul
     return {
       kind: 'warning',
       title: 'Атари!',
-      text: `${cap(groupPhrase(g, 'mine', 'nom'))} в атари: осталась одна свобода, ${pointName(g.liberties[0]!)}. Спаси или реши, что спасать не стоит.`,
-      mark: g.liberties[0],
+      text: `${cap(groupPhrase(g, 'mine', 'nom'))} в атари: осталась одна свобода. Спаси или реши, что спасать не стоит.`,
     };
   }
   return null;
 }
 
-/** "Что здесь происходит?" — facts about the current position plus KataGo's view. */
-export function describePosition(s: GameState, analysis: SearchResult | null): { lines: string[]; mark?: number } {
+export interface PositionView {
+  lines: string[];
+  zone?: Zone;
+  /** KataGo's move, revealed on request. */
+  mark?: number;
+  reveal?: string;
+}
+
+/** "Что здесь происходит?" — facts about the position and the area where good moves are. */
+export function describePosition(s: GameState, analysis: SearchResult | null): PositionView {
   const me = s.toPlay;
   const opp = other(me);
   const lines: string[] = [];
@@ -254,13 +291,20 @@ export function describePosition(s: GameState, analysis: SearchResult | null): {
         : `По оценке KataGo ты ${lead > 0 ? 'впереди' : 'отстаёшь'} примерно на ${round(Math.abs(lead))} ${round(Math.abs(lead)) === 1 ? 'очко' : 'очков'} (твои шансы ${pct}%).`,
     );
   }
-  for (const g of groupsInAtari(s.board, me))
-    lines.push(`${cap(groupPhrase(g, 'mine', 'nom'))} в атари: последняя свобода ${pointName(g.liberties[0]!)}.`);
+  for (const g of groupsInAtari(s.board, me)) lines.push(`${cap(groupPhrase(g, 'mine', 'nom'))} в атари: осталась одна свобода.`);
   for (const g of groupsInAtari(s.board, opp))
-    lines.push(`${cap(groupPhrase(g, 'white', 'acc'))} можно захватить ходом ${pointName(g.liberties[0]!)}.`);
+    lines.push(`${cap(groupPhrase(g, 'white', 'nom'))} в атари — ${g.stones.length === 1 ? 'его' : 'её'} можно захватить.`);
   for (const g of allGroups(s.board).filter((x) => x.color === me && x.liberties.length === 2 && x.stones.length >= 2))
     lines.push(`У твоей группы у ${pointName(Math.min(...g.stones))} всего 2 свободы — следи за атари.`);
   const best = analysis?.moves[0]?.move;
-  if (best !== undefined) lines.push(best === PASS ? 'KataGo считает, что можно пасовать.' : `KataGo сыграл бы ${pointName(best)} (отмечено на доске).`);
-  return { lines, mark: best !== undefined && best !== PASS ? best : undefined };
+  if (best === PASS) {
+    lines.push('KataGo считает, что полезных ходов не осталось — можно пасовать.');
+    return { lines };
+  }
+  const zone = goodZone(analysis) ?? undefined;
+  if (zone && best !== undefined) {
+    lines.push(`Хорошие ходы сейчас — в области: ${zone.name} (подсвечено). ${areaReason(s.board, best, me)}`);
+    return { lines, zone, mark: best, reveal: `KataGo сыграл бы ${pointName(best)}.` };
+  }
+  return { lines };
 }

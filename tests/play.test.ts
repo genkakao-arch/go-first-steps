@@ -55,7 +55,12 @@ describe('coach', () => {
       analysisAfter: result([['E4', -1]]),
     });
     expect(note?.kind).toBe('mistake');
-    expect(note?.text).toContain('Можно было захватить 1 камень ходом E4');
+    expect(note?.text).toContain('Можно было захватить 1 камень');
+    // The point itself is not named — only the area — until the learner asks.
+    expect(note?.text).not.toContain('E4');
+    expect(note?.zone?.regions).toEqual(['center-middle']);
+    expect(note?.zone?.points).toContain(P('E4'));
+    expect(note?.reveal).toContain('E4');
     expect(note?.mark).toBe(P('E4'));
   });
 
@@ -84,14 +89,16 @@ describe('coach', () => {
     const note = noteEngineMove(s, P('E6'));
     expect(note?.kind).toBe('warning');
     expect(note?.text).toContain('Твой камень E5 в атари');
-    expect(note?.mark).toBe(P('E4'));
+    expect(note?.text).not.toContain('E4');
   });
 
   it('describes capturable stones', () => {
     const s = game(['D5', 'E5', 'F5', 'A9', 'E6', 'A8']);
     const d = describePosition(s, result([['E4', 8]], 8));
-    expect(d.lines.join(' ')).toContain('Белый камень E5 можно захватить ходом E4');
-    expect(d.mark).toBe(P('E4'));
+    expect(d.lines.join(' ')).toContain('Белый камень E5 в атари — его можно захватить');
+    expect(d.lines.join(' ')).toContain('Хорошие ходы сейчас — в области: центр');
+    expect(d.lines.join(' ')).not.toContain('E4');
+    expect(d.reveal).toBe('KataGo сыграл бы E4.');
   });
 });
 
@@ -150,5 +157,17 @@ describe('saved games', () => {
   it('replays moves and stops at an illegal one', () => {
     const s = replay([40, 41, 40]);
     expect(s.history).toHaveLength(2);
+  });
+});
+
+describe('zones', () => {
+  it('covers up to two areas of good moves, best first', async () => {
+    const { goodZone } = await import('../src/play/zones');
+    const z = goodZone(result([['C3', 5], ['G7', 4.5], ['E5', 4.8], ['A9', -10]]));
+    expect(z?.regions[0]).toBe('left-bottom');
+    expect(z?.regions).toHaveLength(2);
+    expect(z?.points).toHaveLength(18);
+    expect(z?.name).toMatch(/^левый нижний угол и /);
+    expect(goodZone(result([['pass', 0]]))).toBeNull();
   });
 });
