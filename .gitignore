@@ -5,3 +5,4 @@ dist
 test-results
 playwright-report
 .claude
+public/models/kata9x9

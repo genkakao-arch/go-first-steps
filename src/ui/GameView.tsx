@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { type Cell, other, pointName } from '../go/board';
-import { sharedKataGo } from '../katago/shared';
+import { MODELS, modelChoice, onModelProgress, sharedKataGo } from '../katago/shared';
 import { type GameState, PASS, type SearchResult, applyMove, newGame } from '../katago/search';
 import { KOMI } from '../katago/rules';
 import { type CoachNote, type PositionView, describePosition, judgeUserMove, noteEngineMove } from '../play/coach';
@@ -13,8 +13,6 @@ import { Board, type MarkKind } from './Board';
 
 const moveName = (m: number) => (m === PASS ? 'пас' : pointName(m));
 
-/** Playouts per search; enough for a stable estimate, ~1 s on a modern phone. */
-const VISITS = 120;
 
 type Phase = 'loading' | 'user' | 'engine' | 'scoring' | 'over' | 'error';
 
@@ -50,6 +48,9 @@ export function GameView({ onSpeedTest }: Props) {
   const pending = useRef<{ state: GameState; promise: Promise<SearchResult | null> } | null>(null);
   const alive = useRef(true);
   const lowStreak = useRef(0);
+  /** Playouts per search for the chosen network (fixed while this screen is open). */
+  const [visits] = useState(() => MODELS[modelChoice()].visits);
+  const [download, setDownload] = useState<number | null>(null);
 
   useEffect(() => {
     alive.current = true;
@@ -70,7 +71,7 @@ export function GameView({ onSpeedTest }: Props) {
   const analyse = (s: GameState) => {
     const { client } = sharedKataGo();
     const promise = client
-      .search(s, VISITS, true)
+      .search(s, visits, true)
       .then((r) => r.result)
       .catch(() => null);
     pending.current = { state: s, promise };
@@ -87,6 +88,10 @@ export function GameView({ onSpeedTest }: Props) {
   // Load the network, then resume the saved game.
   useEffect(() => {
     const { ready } = sharedKataGo();
+    const off = onModelProgress(({ loaded, total }) => {
+      if (total > 0) setDownload(Math.min(100, Math.round((loaded / total) * 100)));
+    });
+    void ready.finally(off);
     ready
       .then(() => {
         if (!alive.current) return;
@@ -131,7 +136,7 @@ export function GameView({ onSpeedTest }: Props) {
     const analysisBefore = before ? await analysisFor(before) : null;
     let res: SearchResult;
     try {
-      res = (await client.search(s, VISITS, true)).result;
+      res = (await client.search(s, visits, true)).result;
     } catch (e) {
       setError((e as Error).message);
       setPhase('error');
@@ -349,7 +354,9 @@ export function GameView({ onSpeedTest }: Props) {
 
   const status =
     phase === 'loading'
-      ? 'Загружаю KataGo…'
+      ? download !== null && download < 100
+        ? `Скачиваю сеть KataGo: ${download}% (один раз, потом работает без интернета)…`
+        : 'Загружаю KataGo…'
       : phase === 'engine'
         ? 'KataGo думает…'
         : phase === 'scoring'

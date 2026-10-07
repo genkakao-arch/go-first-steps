@@ -237,11 +237,18 @@ test('game against KataGo: move, coach, persistence, resign', async ({ page }, i
 });
 
 test('KataGo speed test page works', async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
   await page.goto('./');
   await page.getByRole('button', { name: 'Играть', exact: true }).click();
   await page.getByRole('button', { name: 'Проверка скорости' }).click();
   await expect(page.getByText('Ускорение:')).toBeVisible({ timeout: 60_000 });
   await page.getByRole('button', { name: 'Замерить скорость' }).click();
-  await expect(page.getByText(/одна оценка позиции/)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/Одна оценка позиции/)).toBeVisible({ timeout: 60_000 });
+
+  // The strong 9×9 network downloads in parts, then works the same way.
+  await page.getByRole('button', { name: /Сильная сеть 9×9/ }).click();
+  await expect(page.getByText(/kata9x9-b18c384nbt/)).toBeVisible({ timeout: 180_000 });
+  await page.getByRole('button', { name: 'Замерить скорость' }).click();
+  await expect(page.getByText(/Ход в партии \(40 вариантов\)/)).toBeVisible({ timeout: 120_000 });
+  console.log((await page.locator('.facts').innerText()).replace(/\n/g, ' | '));
 });

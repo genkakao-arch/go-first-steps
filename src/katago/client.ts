@@ -3,7 +3,7 @@ import type { Backend } from './net';
 import type { WorkerRequest, WorkerResponse } from './protocol';
 import type { GameState } from './search';
 
-type Pending = { resolve: (r: WorkerResponse) => void; reject: (e: Error) => void };
+type Pending = { resolve: (r: WorkerResponse) => void; reject: (e: Error) => void; onProgress?: (loaded: number, total: number) => void };
 
 type Req = WorkerRequest extends infer R ? (R extends { id: number } ? Omit<R, 'id'> : never) : never;
 
@@ -16,6 +16,10 @@ export class KataGoClient {
     this.worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       const p = this.pending.get(e.data.id);
       if (!p) return;
+      if (e.data.type === 'progress') {
+        p.onProgress?.(e.data.loaded, e.data.total);
+        return;
+      }
       this.pending.delete(e.data.id);
       if (e.data.type === 'error') p.reject(new Error(e.data.message));
       else p.resolve(e.data);
@@ -27,16 +31,19 @@ export class KataGoClient {
     };
   }
 
-  private send<T extends WorkerResponse['type']>(req: Req): Promise<Extract<WorkerResponse, { type: T }>> {
+  private send<T extends WorkerResponse['type']>(
+    req: Req,
+    onProgress?: (loaded: number, total: number) => void,
+  ): Promise<Extract<WorkerResponse, { type: T }>> {
     const id = this.next++;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (r: WorkerResponse) => void, reject });
+      this.pending.set(id, { resolve: resolve as (r: WorkerResponse) => void, reject, onProgress });
       this.worker.postMessage({ ...req, id } as WorkerRequest);
     });
   }
 
-  init(modelUrl: string, prefer: Backend | 'auto' = 'auto') {
-    return this.send<'init'>({ type: 'init', modelUrl, prefer });
+  init(modelUrl: string, prefer: Backend | 'auto' = 'auto', onProgress?: (loaded: number, total: number) => void) {
+    return this.send<'init'>({ type: 'init', modelUrl, prefer }, onProgress);
   }
 
   bench(runs: number) {

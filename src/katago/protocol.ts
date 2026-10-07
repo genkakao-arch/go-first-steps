@@ -12,4 +12,5 @@ export type WorkerResponse =
   | { id: number; type: 'bench'; avgMs: number; minMs: number; runs: number }
   | { id: number; type: 'search'; result: SearchResult; ms: number }
   | { id: number; type: 'line'; ownership: number[]; leadBlack: number; played: number }
-  | { id: number; type: 'error'; message: string };
+  | { id: number; type: 'error'; message: string }
+  | { id: number; type: 'progress'; loaded: number; total: number };

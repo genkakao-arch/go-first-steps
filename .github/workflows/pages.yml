@@ -24,6 +24,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # KataGo's 9×9 network (98 MB) is not in git: fetch, verify and split it for hosting.
+      - run: node scripts/fetch-strong-model.mjs
       - run: npm run check
       - uses: actions/upload-pages-artifact@v3
         with:

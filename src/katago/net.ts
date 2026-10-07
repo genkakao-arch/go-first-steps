@@ -72,10 +72,62 @@ export async function initBackend(prefer: Backend | 'auto' = 'auto'): Promise<{ 
   throw new Error('Не удалось запустить TensorFlow.js ни на одном backend');
 }
 
-export async function loadModel(url: string): Promise<{ name: string; bytes: number }> {
+export type Progress = (loaded: number, total: number) => void;
+
+/** Reads a response body, reporting progress against `total` starting from `offset`. */
+async function readWithProgress(res: Response, offset: number, total: number, onProgress?: Progress): Promise<Uint8Array> {
+  if (!res.body) return new Uint8Array(await res.arrayBuffer());
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    got += value.length;
+    onProgress?.(offset + got, total);
+  }
+  const out = new Uint8Array(got);
+  let p = 0;
+  for (const c of chunks) {
+    out.set(c, p);
+    p += c.length;
+  }
+  return out;
+}
+
+interface SplitManifest {
+  name: string;
+  size: number;
+  parts: string[];
+}
+
+/**
+ * Loads a network from a single `.bin.gz` URL or from a `manifest.json` describing parts
+ * (big networks are split to fit static hosting limits).
+ */
+export async function loadModel(url: string, onProgress?: Progress): Promise<{ name: string; bytes: number }> {
+  if (url.endsWith('.json')) {
+    const mres = await fetch(url);
+    if (!mres.ok) throw new Error(`Не удалось скачать описание сети: ${mres.status}`);
+    const manifest = (await mres.json()) as SplitManifest;
+    const all = new Uint8Array(manifest.size);
+    let offset = 0;
+    for (const part of manifest.parts) {
+      const res = await fetch(new URL(part, url).href);
+      if (!res.ok) throw new Error(`Не удалось скачать часть сети ${part}: ${res.status}`);
+      const buf = await readWithProgress(res, offset, manifest.size, onProgress);
+      if (offset + buf.length > manifest.size) throw new Error('Файл сети больше ожидаемого');
+      all.set(buf, offset);
+      offset += buf.length;
+    }
+    if (offset !== manifest.size) throw new Error(`Сеть скачалась не полностью (${offset} из ${manifest.size} байт)`);
+    return loadModelBytes(all);
+  }
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Не удалось скачать сеть: ${res.status}`);
-  return loadModelBytes(new Uint8Array(await res.arrayBuffer()));
+  const total = Number(res.headers.get('content-length') ?? 0);
+  return loadModelBytes(await readWithProgress(res, 0, total, onProgress));
 }
 
 export async function loadModelBytes(raw: Uint8Array): Promise<{ name: string; bytes: number }> {

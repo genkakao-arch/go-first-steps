@@ -11,7 +11,7 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
     if (req.type === 'init') {
       const t0 = performance.now();
       const { backend, notes } = await initBackend(req.prefer);
-      const model = await loadModel(req.modelUrl);
+      const model = await loadModel(req.modelUrl, (loaded, total) => reply({ id: req.id, type: 'progress', loaded, total }));
       reply({ id: req.id, type: 'init', backend, notes, modelName: model.name, modelBytes: model.bytes, ms: performance.now() - t0 });
     } else if (req.type === 'bench') {
       const g = newGame();

@@ -34,9 +34,9 @@ export default defineConfig({
         runtimeCaching: [
           {
             // Network weights and WASM binaries: downloaded once, then kept offline.
-            urlPattern: ({ url }) => /\.(gz|wasm)$/.test(url.pathname),
+            urlPattern: ({ url }) => /\.(gz|wasm)$/.test(url.pathname) || url.pathname.includes('/models/'),
             handler: 'CacheFirst',
-            options: { cacheName: 'katago', expiration: { maxEntries: 10 } },
+            options: { cacheName: 'katago', expiration: { maxEntries: 20 } },
           },
         ],
       },
